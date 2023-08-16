@@ -1,17 +1,29 @@
-"""A timetable which enables students to keep track of their lesson schedule.
-
-Users may enter the subject, teacher, and room for each timetable slot.
-"""
-
 import json
 import sys
 
-from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QDialog, QMainWindow
+from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtWidgets import QDialog, QMainWindow, QStyledItemDelegate
 
 from setup.edit_timetable_setup import Ui_dialog_edit_timetable
 from setup.timetable_setup import Ui_mwindow_timetable
 
+DAYS_IN_WEEK = 7  # A 7-day week
+PERIODS_PER_DAY = 6  # 6 periods per day
+
+class CellDelegate(QStyledItemDelegate):
+    """Custom delegate to style cells in the table widget."""
+
+    def paint(self, painter, option, index):
+        item = index.model().data(index, QtCore.Qt.DisplayRole)
+        if item:
+            painter.save()
+            painter.setPen(QtGui.QPen(QtCore.Qt.black, 1))
+            painter.drawRect(option.rect)
+            option = QtWidgets.QStyleOptionViewItem(option)
+            option.displayAlignment = QtCore.Qt.AlignCenter
+            self.initStyleOption(option, index)
+            super().paint(painter, option, index)
+            painter.restore()
 
 def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
@@ -20,13 +32,8 @@ def main() -> None:
     mwindow_timetable.show()
     sys.exit(app.exec_())
 
-
 def read_lessons() -> list:
-    """Reads JSON files for list of lessons to display in timetable.
-
-    Returns:
-        timetable: A list of lessons in the timetable.
-    """
+    """Reads JSON files for list of lessons to display in timetable."""
     with open("resources/timetable.json", "r") as outfile:
         try:
             timetable = json.load(outfile)
@@ -35,13 +42,12 @@ def read_lessons() -> list:
             timetable = []
 
         # Adds empty dictionary values for empty timetable slots.
-        missing_lessons = 25 - len(timetable)
-        for index in range(missing_lessons):
+        missing_lessons = DAYS_IN_WEEK * PERIODS_PER_DAY - len(timetable)
+        for _ in range(missing_lessons):
             lesson = {"subject": " ", "teacher": " ", "room": " "}
             timetable.append(lesson)
 
     return timetable
-
 
 class EditTimetableDialog(QDialog, Ui_dialog_edit_timetable):
     """Sets up the Edit Timetable dialog."""
@@ -50,14 +56,8 @@ class EditTimetableDialog(QDialog, Ui_dialog_edit_timetable):
         super().__init__()
         self.setupUi(self)
 
-
 class TimetableWindow(QMainWindow, Ui_mwindow_timetable):
-    """Sets up the Timetable main window.
-
-    Attributes:
-        Dialog: Dialog window for editing a timetable slot.
-        timetable: List of lessons in the timetable.
-    """
+    """Sets up the Timetable main window."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -90,27 +90,31 @@ class TimetableWindow(QMainWindow, Ui_mwindow_timetable):
     def update_timetable(self) -> None:
         """Populates the timetable with all lessons."""
         # Resizes columns and rows to fit the contents.
+        self.table_widget_timetable.setRowCount(PERIODS_PER_DAY)
+        self.table_widget_timetable.setColumnCount(DAYS_IN_WEEK)
         self.table_widget_timetable.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.ResizeToContents
+            QtWidgets.QHeaderView.Stretch
         )
         self.table_widget_timetable.verticalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.ResizeToContents
+            QtWidgets.QHeaderView.Stretch
         )
 
+        delegate = CellDelegate(self.table_widget_timetable)
+        self.table_widget_timetable.setItemDelegate(delegate)
+
         # Adds lesson details to each cell in the timetable.
-        for row_index, row in enumerate(self.timetable[::5]):
-            for column_index, column in enumerate(range(5)):
-                index = (row_index * 5) + column_index
+        for row_index in range(PERIODS_PER_DAY):
+            for column_index in range(DAYS_IN_WEEK):
+                lesson = self.timetable[column_index * PERIODS_PER_DAY + row_index]
                 lesson_details = (
-                    (self.timetable[index]["subject"])
+                    (lesson["subject"])
                     + "\n"
-                    + (self.timetable[index]["teacher"])
+                    + (lesson["teacher"])
                     + "\n"
-                    + (self.timetable[index]["room"])
+                    + (lesson["room"])
                 )
-                self.table_widget_timetable.setItem(
-                    row_index, column_index, QtWidgets.QTableWidgetItem(lesson_details)
-                )
+                cell_item = QtWidgets.QTableWidgetItem(lesson_details)
+                self.table_widget_timetable.setItem(row_index, column_index, cell_item)
 
     def save_timetable_list(self) -> None:
         """Updates the JSON file with the current timetable list."""
@@ -141,23 +145,21 @@ class TimetableWindow(QMainWindow, Ui_mwindow_timetable):
                 "teacher": lesson_teacher,
                 "room": lesson_room,
             }
-            index = (selected_row * 5) + selected_column
+            index = selected_column * PERIODS_PER_DAY + selected_row
             self.timetable[index] = lesson
             self.save_timetable_list()
             self.Dialog.close()
 
-    # Clears the lesson from the selected timetable slot.
     def clear_timetable_slot(self) -> None:
+        """Clears the lesson from the selected timetable slot."""
         selected_row = self.table_widget_timetable.currentRow()
         selected_column = self.table_widget_timetable.currentColumn()
-
-        # Removes the lesson details from the timetable slot.
-        lesson = {"subject": "", "teacher": "", "room": ""}
-        index = (selected_row * 5) + selected_column
+        index = selected_column * PERIODS_PER_DAY + selected_row
+        lesson = {"subject": " ", "teacher": " ", "room": " "}
         self.timetable[index] = lesson
         self.save_timetable_list()
-
 
 # Opens the main window when the program is executed.
 if __name__ == "__main__":
     main()
+
